@@ -34,8 +34,8 @@
   "author": "Edda Engineering Team",
   "license": "UNLICENSED",
   "devDependencies": {
-    "@prisma/engines": "6.4.1",
-    "prisma": "6.4.1"
+    "@prisma/engines": "6.19.3",
+    "prisma": "6.19.3"
   },
   "overrides": {
     "lodash": "^4.18.1",
