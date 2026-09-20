@@ -1,0 +1,35 @@
+{
+  "name": "edda-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "عِدّة - Scalable marketplace for maintenance services, verified technicians, and partner stores",
+  "workspaces": [
+    "packages/*",
+    "apps/api",
+    "apps/dashboard"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "dev:api": "npm --workspace=apps/api run start:dev",
+    "dev:dashboard": "npm --workspace=apps/dashboard run dev",
+    "prisma:generate": "npm --workspace=apps/api run prisma:generate",
+    "prisma:migrate": "npm --workspace=apps/api run prisma:migrate",
+    "prisma:seed": "npm --workspace=apps/api run prisma:seed",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
+  },
+  "keywords": [
+    "edda",
+    "maintenance-marketplace",
+    "safepay",
+    "egypt",
+    "technicians",
+    "nest",
+    "nextjs",
+    "flutter"
+  ],
+  "author": "Edda Engineering Team",
+  "license": "UNLICENSED"
+}

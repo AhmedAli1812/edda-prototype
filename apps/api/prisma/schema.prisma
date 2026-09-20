@@ -1,0 +1,1060 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -----------------------------------------------------------------------------
+// ENUMS
+// -----------------------------------------------------------------------------
+
+enum UserRole {
+  CUSTOMER
+  TECHNICIAN
+  STORE_PARTNER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum KycStatus {
+  NOT_SUBMITTED
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum ServiceRequestStatus {
+  DRAFT
+  OPEN_FOR_BIDS
+  OFFER_ACCEPTED
+  CANCELLED
+  EXPIRED
+}
+
+enum OfferStatus {
+  SUBMITTED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  WITHDRAWN
+}
+
+enum JobStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  EN_ROUTE
+  ARRIVED
+  IN_PROGRESS
+  CHANGE_ORDER_PENDING
+  COMPLETED
+  DISPUTE_OPEN
+  DISPUTE_RESOLVED
+  SETTLED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  INITIATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+  VOIDED
+  REQUIRES_ACTION
+}
+
+enum PaymentMethodType {
+  CARD
+  WALLET
+  VALU
+  INSTALLMENTS
+}
+
+enum ChangeOrderStatus {
+  PROPOSED
+  APPROVED
+  DECLINED
+  PAID
+  CANCELLED
+}
+
+enum ChangeOrderType {
+  SPARE_PART
+  EXTRA_LABOR
+  BOTH
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED_REFUND_CUSTOMER
+  RESOLVED_PAY_TECHNICIAN
+  RESOLVED_SPLIT
+  DISMISSED
+}
+
+enum StoreOrderStatus {
+  PENDING_PAYMENT
+  PREPARING
+  READY_FOR_PICKUP
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PickupType {
+  BRANCH_PICKUP
+  DELIVERY
+}
+
+enum InventoryMovementType {
+  STOCK_IN
+  ORDER_RESERVED
+  ORDER_DISPATCHED
+  CHANGE_ORDER_DISPATCHED
+  RETURN_RESTOCK
+  MANUAL_ADJUSTMENT
+}
+
+enum TransactionType {
+  DEPOSIT
+  PAYMENT_HOLD
+  PAYMENT_RELEASE
+  COMMISSION_DEDUCTION
+  CHANGE_ORDER_PAYMENT
+  WITHDRAWAL
+  REFUND
+  REWARD_POINTS_CASHBACK
+}
+
+enum TransactionDirection {
+  CREDIT
+  DEBIT
+}
+
+enum SettlementStatus {
+  PENDING
+  PROCESSING
+  TRANSFERRED
+  FAILED
+  FROZEN_FOR_DISPUTE
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AntiCircumventionAction {
+  NONE
+  BLOCKED
+  WARNING_ISSUED
+  FLAGGED_FOR_REVIEW
+  ACCOUNT_SUSPENDED
+}
+
+enum DocumentType {
+  NATIONAL_ID_FRONT
+  NATIONAL_ID_BACK
+  CRIMINAL_RECORD
+  COMMERCIAL_REGISTER
+  TAX_CARD
+  PROFESSIONAL_LICENSE
+  DISPUTE_EVIDENCE
+  SERVICE_PHOTO
+  PRODUCT_IMAGE
+}
+
+enum OtpPurpose {
+  REGISTRATION
+  LOGIN
+  ARRIVAL_VERIFICATION
+  COMPLETION_VERIFICATION
+  STORE_PICKUP
+}
+
+// -----------------------------------------------------------------------------
+// USER, AUTH & ADDRESS MODELS
+// -----------------------------------------------------------------------------
+
+model User {
+  id           String     @id @default(uuid())
+  phone        String     @unique
+  email        String?    @unique
+  passwordHash String?
+  fullName     String
+  role         UserRole   @default(CUSTOMER)
+  status       UserStatus @default(ACTIVE)
+  rewardPoints Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  refreshTokens     RefreshToken[]
+  deviceTokens      DeviceToken[]
+  otpCodes          OtpCode[]
+  addresses         Address[]
+  technicianProfile TechnicianProfile?
+  storeProfile      StoreProfile?
+  verificationDocs  VerificationDocument[]
+
+  customerRequests ServiceRequest[] @relation("CustomerRequests")
+  customerJobs     Job[]            @relation("CustomerJobs")
+  customerOrders   StoreOrder[]     @relation("CustomerOrders")
+  payments         Payment[]
+  reviewsAuthored  Review[]         @relation("ReviewAuthor")
+  wallet           Wallet?
+  auditLogs        AuditLog[]
+  cart             Cart?
+
+  sentMessages   ChatMessage[]  @relation("SentMessages")
+  disputesRaised Dispute[]      @relation("DisputesRaised")
+  notifications  Notification[]
+
+  @@index([phone])
+  @@index([role, status])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String // 'android', 'ios', 'web'
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model OtpCode {
+  id          String     @id @default(uuid())
+  userId      String?
+  phone       String
+  codeHash    String
+  purpose     OtpPurpose
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(5)
+  expiresAt   DateTime
+  verifiedAt  DateTime?
+  createdAt   DateTime   @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([phone, purpose])
+  @@index([expiresAt])
+}
+
+model Address {
+  id            String   @id @default(uuid())
+  userId        String
+  title         String // e.g. 'المنزل', 'العمل'
+  governorate   String // e.g. 'القاهرة'
+  city          String // e.g. 'مدينة نصر'
+  district      String // e.g. 'الحي السابع'
+  street        String
+  building      String?
+  floor         String?
+  apartment     String?
+  landmark      String?
+  latitude      Float
+  longitude     Float
+  maskedAddress String // e.g. 'مدينة نصر • بالقرب من شارع الطيران'
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceRequests ServiceRequest[]
+
+  @@index([userId])
+  @@index([latitude, longitude])
+  @@index([governorate, city])
+}
+
+// -----------------------------------------------------------------------------
+// PROFILES & KYC
+// -----------------------------------------------------------------------------
+
+model TechnicianProfile {
+  id                 String    @id @default(uuid())
+  userId             String    @unique
+  nationalIdNumber   String?   @unique
+  bio                String?   @db.Text
+  categories         Json? // JSON array of category slugs in MySQL
+  kycStatus          KycStatus @default(NOT_SUBMITTED)
+  isOnline           Boolean   @default(false)
+  serviceRadiusKm    Int       @default(15)
+  currentLatitude    Float?
+  currentLongitude   Float?
+  rating             Float     @default(5.0)
+  totalCompletedJobs Int       @default(0)
+  acceptanceRate     Float     @default(100.0)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offers          Offer[]
+  jobs            Job[]
+  changeOrders    ChangeOrder[]
+  reviewsReceived Review[]      @relation("TechnicianReviews")
+
+  @@index([isOnline])
+  @@index([currentLatitude, currentLongitude])
+  @@index([rating])
+}
+
+model StoreProfile {
+  id                    String    @id @default(uuid())
+  userId                String    @unique
+  storeName             String
+  commercialRegNumber   String?   @unique
+  taxNumber             String?   @unique
+  kycStatus             KycStatus @default(NOT_SUBMITTED)
+  commissionRatePercent Float     @default(8.0) // 8% partner store commission
+  rating                Float     @default(5.0)
+  contactPhone          String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branches         StoreBranch[]
+  products         Product[]
+  orders           StoreOrder[]
+  changeOrderParts ChangeOrder[]
+
+  @@index([rating])
+}
+
+model StoreBranch {
+  id                String   @id @default(uuid())
+  storeId           String
+  branchName        String
+  governorate       String
+  city              String
+  district          String
+  addressDetails    String   @db.Text
+  latitude          Float
+  longitude         Float
+  contactPhone      String?
+  isPickupAvailable Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  store  StoreProfile @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orders StoreOrder[]
+
+  @@index([storeId])
+  @@index([latitude, longitude])
+}
+
+model VerificationDocument {
+  id            String       @id @default(uuid())
+  userId        String
+  type          DocumentType
+  documentUrl   String       @db.Text
+  status        KycStatus    @default(PENDING_REVIEW)
+  reviewerNotes String?      @db.Text
+  verifiedAt    DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([status])
+}
+
+// -----------------------------------------------------------------------------
+// CATEGORIES, PRODUCTS & INVENTORY
+// -----------------------------------------------------------------------------
+
+model ServiceCategory {
+  id          String   @id @default(uuid())
+  nameAr      String
+  nameEn      String
+  slug        String   @unique
+  iconName    String
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  serviceRequests ServiceRequest[]
+  products        Product[]
+
+  @@index([slug])
+  @@index([isActive, sortOrder])
+}
+
+model Product {
+  id                       String   @id @default(uuid())
+  storeId                  String? // Null if platform-owned
+  categoryId               String
+  titleAr                  String
+  titleEn                  String?
+  descriptionAr            String   @db.Text
+  descriptionEn            String?  @db.Text
+  sku                      String   @unique
+  priceMinorUnits          Int // Egyptian Piasters (integer)
+  compareAtPriceMinorUnits Int?
+  costPriceMinorUnits      Int?
+  stockQuantity            Int      @default(0)
+  isPlatformOwned          Boolean  @default(false)
+  isActive                 Boolean  @default(true)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  store              StoreProfile?       @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  category           ServiceCategory     @relation(fields: [categoryId], references: [id])
+  images             ProductImage[]
+  inventoryMovements InventoryMovement[]
+  cartItems          CartItem[]
+  orderItems         StoreOrderItem[]
+  changeOrders       ChangeOrder[]
+
+  @@index([sku])
+  @@index([storeId])
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  imageUrl  String   @db.Text
+  sortOrder Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model InventoryMovement {
+  id             String                @id @default(uuid())
+  productId      String
+  type           InventoryMovementType
+  quantityChange Int // Positive or negative
+  quantityAfter  Int
+  referenceType  String? // 'STORE_ORDER', 'CHANGE_ORDER', 'RESTOCK'
+  referenceId    String?
+  notes          String?               @db.Text
+  createdAt      DateTime              @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([referenceType, referenceId])
+}
+
+// -----------------------------------------------------------------------------
+// SERVICE REQUESTS & OFFERS
+// -----------------------------------------------------------------------------
+
+model ServiceRequest {
+  id                          String               @id @default(uuid())
+  customerId                  String
+  categoryId                  String
+  addressId                   String
+  title                       String
+  description                 String               @db.Text
+  preferredTimeType           String               @default("ASAP") // 'ASAP' | 'SCHEDULED'
+  scheduledAt                 DateTime?
+  expectedBudgetMinMinorUnits Int? // Minor units
+  expectedBudgetMaxMinorUnits Int? // Minor units
+  status                      ServiceRequestStatus @default(OPEN_FOR_BIDS)
+  latitude                    Float
+  longitude                   Float
+  maskedDistrict              String
+  createdAt                   DateTime             @default(now())
+  updatedAt                   DateTime             @updatedAt
+
+  customer User                  @relation("CustomerRequests", fields: [customerId], references: [id], onDelete: Cascade)
+  category ServiceCategory       @relation(fields: [categoryId], references: [id])
+  address  Address               @relation(fields: [addressId], references: [id])
+  media    ServiceRequestMedia[]
+  offers   Offer[]
+  job      Job?
+
+  @@index([customerId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([latitude, longitude])
+}
+
+model ServiceRequestMedia {
+  id               String   @id @default(uuid())
+  serviceRequestId String
+  mediaUrl         String   @db.Text
+  mediaType        String // 'image' | 'video'
+  createdAt        DateTime @default(now())
+
+  serviceRequest ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+
+  @@index([serviceRequestId])
+}
+
+model Offer {
+  id                      String      @id @default(uuid())
+  serviceRequestId        String
+  technicianId            String
+  priceMinorUnits         Int // Egyptian Piasters
+  estimatedArrivalMinutes Int
+  warrantyDurationDays    Int         @default(30)
+  warrantyNotes           String?     @db.Text
+  notes                   String?     @db.Text
+  status                  OfferStatus @default(SUBMITTED)
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+
+  serviceRequest ServiceRequest    @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+  technician     TechnicianProfile @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  jobs           Job[]
+
+  @@index([serviceRequestId])
+  @@index([technicianId])
+  @@index([status])
+}
+
+// -----------------------------------------------------------------------------
+// JOBS, CHANGE ORDERS & DISPUTES
+// -----------------------------------------------------------------------------
+
+model Job {
+  id                      String    @id @default(uuid())
+  serviceRequestId        String    @unique
+  customerId              String
+  technicianId            String
+  offerId                 String
+  status                  JobStatus @default(PENDING_PAYMENT)
+  arrivalOtpHash          String?
+  arrivalOtpVerifiedAt    DateTime?
+  completionOtpHash       String?
+  completionOtpVerifiedAt DateTime?
+  startedAt               DateTime?
+  completedAt             DateTime?
+  disputeWindowEndsAt     DateTime?
+  invoiceNumber           String?   @unique
+  warrantyUntil           DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  serviceRequest ServiceRequest    @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+  customer       User              @relation("CustomerJobs", fields: [customerId], references: [id])
+  technician     TechnicianProfile @relation(fields: [technicianId], references: [id])
+  offer          Offer             @relation(fields: [offerId], references: [id])
+
+  payments      Payment[]
+  changeOrders  ChangeOrder[]
+  storeOrders   StoreOrder[]
+  disputes      Dispute[]
+  reviews       Review[]
+  invoices      Invoice[]
+  warranties    Warranty[]
+  cancellations Cancellation[]
+  conversation  ChatConversation?
+
+  @@index([customerId])
+  @@index([technicianId])
+  @@index([status])
+  @@index([disputeWindowEndsAt])
+}
+
+model ChangeOrder {
+  id                        String            @id @default(uuid())
+  jobId                     String
+  technicianId              String
+  type                      ChangeOrderType
+  title                     String
+  description               String            @db.Text
+  laborAmountMinorUnits     Int               @default(0) // Minor units
+  sparePartAmountMinorUnits Int               @default(0) // Minor units
+  totalAmountMinorUnits     Int // Minor units
+  sparePartProductId        String?
+  sparePartStoreId          String?
+  storePickupQrCode         String?
+  status                    ChangeOrderStatus @default(PROPOSED)
+  paymentId                 String?
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+
+  job              Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  technician       TechnicianProfile @relation(fields: [technicianId], references: [id])
+  sparePartProduct Product?          @relation(fields: [sparePartProductId], references: [id])
+  sparePartStore   StoreProfile?     @relation(fields: [sparePartStoreId], references: [id])
+
+  @@index([jobId])
+  @@index([technicianId])
+  @@index([status])
+}
+
+model Dispute {
+  id                     String        @id @default(uuid())
+  jobId                  String
+  raisedByUserId         String
+  reasonCategory         String
+  description            String        @db.Text
+  evidenceUrls           Json? // JSON array of URLs in MySQL
+  status                 DisputeStatus @default(OPEN)
+  adminNotes             String?       @db.Text
+  resolutionDetails      String?       @db.Text
+  refundAmountMinorUnits Int? // Minor units
+  resolvedAt             DateTime?
+  resolvedByUserId       String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  job          Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  raisedByUser User     @relation("DisputesRaised", fields: [raisedByUserId], references: [id])
+  refunds      Refund[]
+
+  @@index([jobId])
+  @@index([status])
+  @@index([raisedByUserId])
+}
+
+model Review {
+  id           String   @id @default(uuid())
+  jobId        String
+  customerId   String
+  technicianId String
+  rating       Int // 1 to 5
+  comment      String?  @db.Text
+  isPublic     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  job        Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  customer   User              @relation("ReviewAuthor", fields: [customerId], references: [id])
+  technician TechnicianProfile @relation("TechnicianReviews", fields: [technicianId], references: [id])
+
+  @@index([technicianId])
+  @@index([customerId])
+}
+
+model Invoice {
+  id                 String   @id @default(uuid())
+  jobId              String?
+  storeOrderId       String?
+  invoiceNumber      String   @unique
+  subtotalMinorUnits Int
+  taxMinorUnits      Int      @default(0)
+  discountMinorUnits Int      @default(0)
+  totalMinorUnits    Int
+  currency           String   @default("EGP")
+  pdfUrl             String?  @db.Text
+  issuedAt           DateTime @default(now())
+
+  job        Job?        @relation(fields: [jobId], references: [id])
+  storeOrder StoreOrder? @relation(fields: [storeOrderId], references: [id])
+
+  @@index([invoiceNumber])
+  @@index([jobId])
+  @@index([storeOrderId])
+}
+
+model Warranty {
+  id           String   @id @default(uuid())
+  jobId        String
+  durationDays Int      @default(30)
+  validUntil   DateTime
+  termsArabic  String   @db.Text
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([validUntil])
+}
+
+model Cancellation {
+  id                   String   @id @default(uuid())
+  jobId                String
+  cancelledBy          String // 'CUSTOMER' | 'TECHNICIAN' | 'ADMIN'
+  reason               String   @db.Text
+  feeChargedMinorUnits Int      @default(0)
+  createdAt            DateTime @default(now())
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+}
+
+// -----------------------------------------------------------------------------
+// CART & E-COMMERCE STORE ORDERS
+// -----------------------------------------------------------------------------
+
+model Cart {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+}
+
+model Coupon {
+  id                    String   @id @default(uuid())
+  code                  String   @unique
+  discountPercent       Float?
+  discountMinorUnits    Int?
+  minOrderMinorUnits    Int?
+  maxDiscountMinorUnits Int?
+  usageLimit            Int?
+  usageCount            Int      @default(0)
+  validFrom             DateTime
+  validUntil            DateTime
+  isActive              Boolean  @default(true)
+
+  orders StoreOrder[]
+
+  @@index([code])
+}
+
+model StoreOrder {
+  id                    String           @id @default(uuid())
+  customerId            String
+  storeId               String
+  branchId              String?
+  jobId                 String? // If ordered as part of an active job
+  couponId              String?
+  totalAmountMinorUnits Int
+  commissionMinorUnits  Int // Store commission deduction
+  storePayoutMinorUnits Int
+  pickupType            PickupType       @default(BRANCH_PICKUP)
+  pickupQrCode          String?          @unique
+  pickupQrVerifiedAt    DateTime?
+  status                StoreOrderStatus @default(PENDING_PAYMENT)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  customer User             @relation("CustomerOrders", fields: [customerId], references: [id])
+  store    StoreProfile     @relation(fields: [storeId], references: [id])
+  branch   StoreBranch?     @relation(fields: [branchId], references: [id])
+  job      Job?             @relation(fields: [jobId], references: [id])
+  coupon   Coupon?          @relation(fields: [couponId], references: [id])
+  items    StoreOrderItem[]
+  payments Payment[]
+  invoices Invoice[]
+
+  @@index([customerId])
+  @@index([storeId])
+  @@index([status])
+  @@index([pickupQrCode])
+}
+
+model StoreOrderItem {
+  id                   String @id @default(uuid())
+  storeOrderId         String
+  productId            String
+  quantity             Int
+  unitPriceMinorUnits  Int
+  totalPriceMinorUnits Int
+
+  storeOrder StoreOrder @relation(fields: [storeOrderId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id])
+
+  @@index([storeOrderId])
+}
+
+// -----------------------------------------------------------------------------
+// SAFEPAY, PAYMENTS, COMMISSIONS & SETTLEMENTS
+// -----------------------------------------------------------------------------
+
+model Payment {
+  id                   String            @id @default(uuid())
+  customerId           String
+  jobId                String?
+  storeOrderId         String?
+  gatewayProvider      String // 'mock', 'paymob', 'fawry', 'kashier'
+  gatewayTransactionId String?           @unique
+  idempotencyKey       String            @unique
+  amountMinorUnits     Int // Egyptian Piasters
+  currency             String            @default("EGP")
+  status               PaymentStatus     @default(INITIATED)
+  paymentMethod        PaymentMethodType @default(CARD)
+  metadata             Json?
+  authorizedAt         DateTime?
+  capturedAt           DateTime?
+  voidedAt             DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  customer   User             @relation(fields: [customerId], references: [id])
+  job        Job?             @relation(fields: [jobId], references: [id])
+  storeOrder StoreOrder?      @relation(fields: [storeOrderId], references: [id])
+  attempts   PaymentAttempt[]
+  refunds    Refund[]
+
+  @@index([idempotencyKey])
+  @@index([gatewayTransactionId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model PaymentAttempt {
+  id              String        @id @default(uuid())
+  paymentId       String
+  attemptNumber   Int
+  gatewayResponse Json?
+  errorMessage    String?       @db.Text
+  status          PaymentStatus
+  createdAt       DateTime      @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+}
+
+model Refund {
+  id               String   @id @default(uuid())
+  paymentId        String
+  disputeId        String?
+  amountMinorUnits Int
+  reason           String   @db.Text
+  gatewayRefundRef String?  @unique
+  status           String   @default("COMPLETED")
+  createdAt        DateTime @default(now())
+
+  payment Payment  @relation(fields: [paymentId], references: [id])
+  dispute Dispute? @relation(fields: [disputeId], references: [id])
+
+  @@index([paymentId])
+  @@index([disputeId])
+}
+
+model PaymentWebhookEvent {
+  id             String    @id @default(uuid())
+  gatewayEventId String    @unique
+  provider       String
+  eventType      String
+  payload        Json
+  isProcessed    Boolean   @default(false)
+  processedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([gatewayEventId])
+  @@index([provider, isProcessed])
+}
+
+model IdempotencyKey {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  path      String
+  response  Json?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([key])
+  @@index([expiresAt])
+}
+
+model Wallet {
+  id                         String   @id @default(uuid())
+  userId                     String   @unique
+  availableBalanceMinorUnits Int      @default(0) // Integer Egyptian Piasters
+  pendingBalanceMinorUnits   Int      @default(0) // Held during 24h dispute window
+  currency                   String   @default("EGP")
+  isLocked                   Boolean  @default(false)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions   Transaction[]
+  payoutAccounts PayoutAccount[]
+
+  @@index([userId])
+}
+
+model Transaction {
+  id                     String               @id @default(uuid())
+  walletId               String
+  type                   TransactionType
+  direction              TransactionDirection
+  amountMinorUnits       Int // Integer Egyptian Piasters
+  balanceAfterMinorUnits Int // Integer Egyptian Piasters
+  referenceType          String // 'JOB', 'STORE_ORDER', 'DISPUTE', 'PAYOUT'
+  referenceId            String
+  description            String               @db.Text
+  createdAt              DateTime             @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+  @@index([referenceType, referenceId])
+}
+
+model PayoutAccount {
+  id              String   @id @default(uuid())
+  walletId        String
+  bankName        String
+  accountNumber   String
+  iban            String?
+  beneficiaryName String
+  isDefault       Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+}
+
+model CommissionRule {
+  id                 String   @id @default(uuid())
+  name               String
+  percentage         Float // e.g. 12.0 for 12%
+  fixedFeeMinorUnits Int      @default(0)
+  minFeeMinorUnits   Int      @default(0)
+  maxFeeMinorUnits   Int?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+}
+
+model SettlementBatch {
+  id                        String           @id @default(uuid())
+  beneficiaryType           String // 'TECHNICIAN' | 'STORE'
+  beneficiaryId             String
+  periodStart               DateTime
+  periodEnd                 DateTime
+  totalGrossMinorUnits      Int
+  totalCommissionMinorUnits Int
+  totalNetPayoutMinorUnits  Int
+  status                    SettlementStatus @default(PENDING)
+  bankTransferRef           String?
+  processedAt               DateTime?
+  createdAt                 DateTime         @default(now())
+
+  @@index([beneficiaryType, beneficiaryId])
+  @@index([status])
+}
+
+// -----------------------------------------------------------------------------
+// CHAT, REALTIME & ANTI-CIRCUMVENTION
+// -----------------------------------------------------------------------------
+
+model ChatConversation {
+  id        String   @id @default(uuid())
+  jobId     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  job      Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([jobId])
+}
+
+model ChatMessage {
+  id             String   @id @default(uuid())
+  conversationId String
+  senderId       String
+  messageText    String   @db.Text
+  isFlagged      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User             @relation("SentMessages", fields: [senderId], references: [id])
+
+  @@index([conversationId])
+  @@index([senderId])
+}
+
+model ChatAntiCircumventionLog {
+  id              String                  @id @default(uuid())
+  jobId           String?
+  senderId        String
+  recipientId     String
+  originalMessage String                  @db.Text
+  flaggedReason   String // 'PHONE_DETECTED', 'PAYMENT_KEYWORD_DETECTED'
+  riskLevel       RiskLevel               @default(MEDIUM)
+  actionTaken     AntiCircumventionAction @default(WARNING_ISSUED)
+  createdAt       DateTime                @default(now())
+
+  @@index([senderId])
+  @@index([riskLevel])
+  @@index([jobId])
+}
+
+// -----------------------------------------------------------------------------
+// AUDIT LOGS & NOTIFICATIONS
+// -----------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  actorRole  UserRole
+  action     String // e.g. 'PAYMENT_CAPTURED', 'KYC_APPROVED', 'OTP_VERIFIED'
+  entityType String // e.g. 'JOB', 'USER', 'DISPUTE'
+  entityId   String
+  ipAddress  String?
+  userAgent  String?
+  details    Json?
+  riskScore  Int      @default(0) // 0 - 100
+  isFlagged  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([isFlagged])
+  @@index([createdAt])
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String
+  titleAr     String
+  bodyAr      String   @db.Text
+  type        String // 'JOB_UPDATE', 'OFFER_RECEIVED', 'PAYMENT_CONFIRMED'
+  dataPayload Json?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+}
