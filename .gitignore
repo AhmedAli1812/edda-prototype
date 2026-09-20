@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+
+# Next.js
+.next/
+out/
+
+# Production builds
+dist/
+build/
+*.tsbuildinfo
+
+# Misc
+.DS_Store
+*.pem
+
+# Environment variables
+.env
+.env.test
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Exceptions: commit example files
+!.env.example
+!apps/*/.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Prisma generated
+prisma/generated/
+
+# Flutter / Dart
+apps/mobile/.dart_tool/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+apps/mobile/.packages
+apps/mobile/build/
+apps/mobile/ios/Flutter/Generated.xcconfig
+apps/mobile/ios/Flutter/flutter_export_environment.sh
+apps/mobile/android/local.properties
+apps/mobile/**/.generated/
+
+# Uploads and temporary files
+uploads/
+scratch/
+tmp/

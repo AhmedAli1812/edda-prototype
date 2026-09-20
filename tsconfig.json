@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "baseUrl": "./",
+    "paths": {
+      "@edda/shared-types": ["packages/shared-types/src/index.ts"],
+      "@edda/shared-types/*": ["packages/shared-types/src/*"],
+      "@edda/shared-config/*": ["packages/shared-config/*"]
+    },
+    "skipLibCheck": true
+  },
+  "exclude": ["node_modules", "dist", ".next", "apps", "packages/*/dist"]
+}
