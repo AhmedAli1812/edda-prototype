@@ -60,9 +60,9 @@ async function bootstrap() {
     swaggerOptions: { persistAuthorization: true },
   });
 
-  await app.listen(port);
-  logger.log(`Edda API running on: http://localhost:${port}/${apiPrefix}`);
-  logger.log(`Swagger Documentation available at: http://localhost:${port}/api/docs`);
+  await app.listen(port, '0.0.0.0');
+  logger.log(`Edda API listening on port ${port}`);
+  logger.log(`Health check: GET /api/v1/health`);
 }
 
 bootstrap();
