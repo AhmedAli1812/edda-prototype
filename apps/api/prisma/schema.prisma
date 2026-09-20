@@ -184,6 +184,12 @@ enum OtpPurpose {
   STORE_PICKUP
 }
 
+enum OtpDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 // -----------------------------------------------------------------------------
 // USER, AUTH & ADDRESS MODELS
 // -----------------------------------------------------------------------------
@@ -226,16 +232,21 @@ model User {
 }
 
 model RefreshToken {
-  id        String    @id @default(uuid())
-  userId    String
-  tokenHash String    @unique
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
+  id                String    @id @default(uuid())
+  userId            String
+  familyId          String // Groups rotated tokens to detect reuse
+  verifierHash      String // HMAC-SHA256 of secret verifier
+  isRevoked         Boolean   @default(false)
+  revokedAt         DateTime?
+  replacedByTokenId String?
+  expiresAt         DateTime
+  createdAt         DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([familyId])
+  @@index([isRevoked])
 }
 
 model DeviceToken {
@@ -253,20 +264,48 @@ model DeviceToken {
 }
 
 model OtpCode {
-  id          String     @id @default(uuid())
-  userId      String?
-  phone       String
-  codeHash    String
-  purpose     OtpPurpose
-  attempts    Int        @default(0)
-  maxAttempts Int        @default(5)
-  expiresAt   DateTime
-  verifiedAt  DateTime?
-  createdAt   DateTime   @default(now())
+  id                String            @id @default(uuid())
+  userId            String?
+  phone             String // Normalized E.164
+  codeHash          String // HMAC-SHA256 with OTP_PEPPER
+  purpose           OtpPurpose
+  deliveryStatus    OtpDeliveryStatus @default(PENDING)
+  providerMessageId String?
+  attempts          Int               @default(0)
+  maxAttempts       Int               @default(5)
+  expiresAt         DateTime
+  consumedAt        DateTime? // Single-use atomic consumption
+  ipHash            String? // Privacy-safe hashed IP
+  createdAt         DateTime          @default(now())
 
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([phone, purpose])
+  @@index([phone, purpose, consumedAt])
+  @@index([createdAt])
+  @@index([expiresAt])
+}
+
+model OtpRateLimit {
+  phone       String   @id // Normalized E.164
+  lastSentAt  DateTime
+  hourlyCount Int      @default(1)
+  windowStart DateTime @default(now())
+  ipHash      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([lastSentAt])
+}
+
+model OnboardingToken {
+  id         String    @id @default(uuid())
+  jti        String    @unique
+  phone      String // Normalized E.164
+  expiresAt  DateTime
+  consumedAt DateTime? // Single-use consumption
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, consumedAt])
   @@index([expiresAt])
 }
 
@@ -302,21 +341,23 @@ model Address {
 // -----------------------------------------------------------------------------
 
 model TechnicianProfile {
-  id                 String    @id @default(uuid())
-  userId             String    @unique
-  nationalIdNumber   String?   @unique
-  bio                String?   @db.Text
-  categories         Json? // JSON array of category slugs in MySQL
-  kycStatus          KycStatus @default(NOT_SUBMITTED)
-  isOnline           Boolean   @default(false)
-  serviceRadiusKm    Int       @default(15)
-  currentLatitude    Float?
-  currentLongitude   Float?
-  rating             Float     @default(5.0)
-  totalCompletedJobs Int       @default(0)
-  acceptanceRate     Float     @default(100.0)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                    String    @id @default(uuid())
+  userId                String    @unique
+  nationalIdEncrypted   String?   @db.Text // AES-256-GCM encrypted
+  nationalIdFingerprint String?   @unique // Deterministic HMAC-SHA256 for uniqueness
+  nationalIdKeyVersion  Int       @default(1)
+  bio                   String?   @db.Text
+  categories            Json? // JSON array of category slugs in MySQL
+  kycStatus             KycStatus @default(NOT_SUBMITTED)
+  isOnline              Boolean   @default(false)
+  serviceRadiusKm       Int       @default(15)
+  currentLatitude       Float?
+  currentLongitude      Float?
+  rating                Float     @default(5.0)
+  totalCompletedJobs    Int       @default(0)
+  acceptanceRate        Float     @default(100.0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   offers          Offer[]

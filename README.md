@@ -17,14 +17,14 @@ edda-prototype/
 │   ├── shared-types/   # Domain interfaces, enums, DTOs, minor-unit money types
 │   ├── shared-config/  # Shared TypeScript, Prettier, and ESLint configurations
 │   └── documentation/  # Architecture, SafePay, Anti-circumvention, and API specifications
-├── docker-compose.yml  # Local PostgreSQL 16 & Redis orchestration
+├── docker-compose.yml  # Local MySQL 8.0 & Redis orchestration
 ├── index.html          # Original UI/UX prototype (preserved untouched for reference)
 ├── package.json        # Monorepo root with npm workspaces
 └── README.md
 ```
 
 ## Production Stack
-- **Backend**: Node.js, NestJS, TypeScript, Prisma ORM, PostgreSQL, Redis, Swagger/OpenAPI.
+- **Backend**: Node.js, NestJS, TypeScript, Prisma ORM, MySQL 8.0, Redis (optional), Swagger/OpenAPI.
 - **Web Dashboard**: Next.js App Router, TypeScript, Tailwind CSS, Cairo Arabic typography.
 - **Mobile App**: Flutter, Dart, Riverpod state management, GoRouter navigation, Dio HTTP client, Flutter Secure Storage.
 - **Security**: Helmet, strict CORS, Throttler rate limiting, bcrypt password hashing, phone OTP authentication, JWT access/refresh rotation, audit logs.

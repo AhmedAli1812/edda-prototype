@@ -7,9 +7,9 @@ void main() {
     await tester.pumpWidget(const ProviderScope(child: EddaApp()));
     await tester.pumpAndSettle();
 
-    expect(find.text('دخول إلى عِدّة'), findsOneWidget);
+    expect(find.text('عِدّة | الدخول والتسجيل'), findsOneWidget);
     expect(find.text('عِدّة'), findsOneWidget);
-    expect(find.text('عميل'), findsOneWidget);
-    expect(find.text('فني صيانة'), findsOneWidget);
+    expect(find.text('تسجيل الدخول'), findsOneWidget);
+    expect(find.text('إنشاء حساب جديد'), findsOneWidget);
   });
 }

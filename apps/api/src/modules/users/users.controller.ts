@@ -12,7 +12,7 @@ export class UsersController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-Auth')
-  @ApiOperation({ summary: 'استرجاع بيانات الحساب الحالي والملف الشخصي' })
+  @ApiOperation({ summary: 'استرجاع بيانات الحساب الحالي والملف الشخصي بدون تسريب بيانات حساسة' })
   async getMe(@CurrentUser('id') userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -24,6 +24,33 @@ export class UsersController {
       },
     });
 
-    return { user };
+    if (!user) {
+      return { user: null };
+    }
+
+    // Sanitize user profile: remove passwordHash and encrypt/hash internals
+    const { passwordHash, ...sanitizedUser } = user;
+
+    let sanitizedTechnician = null;
+    if (user.technicianProfile) {
+      const {
+        nationalIdEncrypted,
+        nationalIdFingerprint,
+        nationalIdKeyVersion,
+        ...restTech
+      } = user.technicianProfile;
+
+      sanitizedTechnician = {
+        ...restTech,
+        isNationalIdVerified: !!nationalIdFingerprint,
+      };
+    }
+
+    return {
+      user: {
+        ...sanitizedUser,
+        technicianProfile: sanitizedTechnician,
+      },
+    };
   }
 }

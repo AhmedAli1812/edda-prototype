@@ -1,5 +1,6 @@
 import { PrismaClient, UserRole, UserStatus, KycStatus, JobStatus, PaymentStatus, PaymentMethodType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -7,13 +8,24 @@ async function main() {
   console.log('Seeding Edda marketplace database...');
 
   const passwordHash = await bcrypt.hash('EddaSecure2026!', 10);
+  const encryptionKey = Buffer.from('MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=', 'base64');
+  const hmacKey = 'dev_national_id_hmac_secret_min_32_chars!';
+
+  const rawNationalId = '29001010101234';
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey, iv);
+  let enc = cipher.update(rawNationalId, 'utf8', 'hex');
+  enc += cipher.final('hex');
+  const tag = cipher.getAuthTag();
+  const nationalIdEncrypted = `${iv.toString('hex')}:${tag.toString('hex')}:${enc}`;
+  const nationalIdFingerprint = crypto.createHmac('sha256', hmacKey).update(rawNationalId).digest('hex');
 
   // 1. Admin User
   const admin = await prisma.user.upsert({
-    where: { phone: '01000000001' },
+    where: { phone: '+201000000001' },
     update: {},
     create: {
-      phone: '01000000001',
+      phone: '+201000000001',
       email: 'admin@edda.eg',
       fullName: 'أحمد الإداري (إدارة المنصة)',
       passwordHash,
@@ -24,10 +36,10 @@ async function main() {
 
   // 2. Customer User
   const customer = await prisma.user.upsert({
-    where: { phone: '01012345678' },
+    where: { phone: '+201012345678' },
     update: {},
     create: {
-      phone: '01012345678',
+      phone: '+201012345678',
       email: 'mohamed@example.com',
       fullName: 'محمد أدهم',
       passwordHash,
@@ -62,10 +74,10 @@ async function main() {
 
   // 3. Technician User & Profile
   const technician = await prisma.user.upsert({
-    where: { phone: '01123456789' },
+    where: { phone: '+201123456789' },
     update: {},
     create: {
-      phone: '01123456789',
+      phone: '+201123456789',
       email: 'ahmed.salem@example.com',
       fullName: 'أحمد سالم',
       passwordHash,
@@ -79,7 +91,9 @@ async function main() {
       },
       technicianProfile: {
         create: {
-          nationalIdNumber: '29001010101234',
+          nationalIdEncrypted,
+          nationalIdFingerprint,
+          nationalIdKeyVersion: 1,
           bio: 'فني كهرباء منازل معتمد خبرة 12 سنة بمدينة نصر ومصر الجديدة',
           categories: ['كهرباء'],
           kycStatus: KycStatus.APPROVED,
@@ -98,10 +112,10 @@ async function main() {
 
   // 4. Partner Store User & Profile
   const storeUser = await prisma.user.upsert({
-    where: { phone: '01234567890' },
+    where: { phone: '+201234567890' },
     update: {},
     create: {
-      phone: '01234567890',
+      phone: '+201234567890',
       email: 'bayt.kahrabaa@example.com',
       fullName: 'بيت الكهرباء (شريك موثّق)',
       passwordHash,
@@ -121,7 +135,7 @@ async function main() {
           kycStatus: KycStatus.APPROVED,
           commissionRatePercent: 8.0,
           rating: 4.9,
-          contactPhone: '01234567890',
+          contactPhone: '+201234567890',
           branches: {
             create: {
               branchName: 'فرع مدينة نصر',

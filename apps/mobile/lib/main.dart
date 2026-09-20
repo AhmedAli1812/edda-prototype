@@ -9,16 +9,18 @@ void main() {
   runApp(const ProviderScope(child: EddaApp()));
 }
 
-class EddaApp extends StatelessWidget {
+class EddaApp extends ConsumerWidget {
   const EddaApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(routerProvider);
+
     return MaterialApp.router(
       title: 'عِدّة | خدمات الصيانة والمتاجر',
       debugShowCheckedModeBanner: false,
       theme: EddaTheme.lightTheme,
-      routerConfig: appRouter,
+      routerConfig: router,
       locale: const Locale('ar'),
       supportedLocales: const [
         Locale('ar'),

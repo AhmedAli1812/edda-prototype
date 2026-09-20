@@ -4,7 +4,7 @@
 Edda is a production-grade maintenance services marketplace connecting Egyptian households with verified technicians and local partner hardware/parts stores.
 
 ## Monorepo Layout
-- **`apps/api/`**: NestJS REST API + WebSocket gateways, Prisma ORM, PostgreSQL, Redis.
+- **`apps/api/`**: NestJS REST API + WebSocket gateways, Prisma ORM, MySQL 8.0, Redis (optional).
 - **`apps/dashboard/`**: Next.js (App Router), TypeScript, Tailwind CSS with full Arabic RTL support for Admins and Partner Stores.
 - **`apps/mobile/`**: Flutter cross-platform mobile application for Customers and Technicians (Riverpod, GoRouter, Dio, SecureStorage).
 - **`packages/shared-types/`**: Shared domain enums, model interfaces, and DTO contracts.

@@ -4,7 +4,7 @@
 - Node.js >= 20 (Detected: v24.11.1)
 - npm >= 10 (Detected: 11.6.2)
 - Flutter >= 3.20 (Detected: 3.38.9) with Dart (Detected: 3.10.8)
-- PostgreSQL (via Docker Compose or local PostgreSQL service)
+- MySQL 8.0 (via Docker Compose or local MySQL service)
 
 ## Step-by-Step Setup
 
@@ -21,8 +21,8 @@ Option A (Docker Desktop):
 npm run docker:up
 ```
 
-Option B (Local PostgreSQL):
-Ensure PostgreSQL is running on port 5432 with credentials matching `apps/api/.env`.
+Option B (Local MySQL 8):
+Ensure MySQL 8.0 is running on port 3306 with credentials matching `apps/api/.env`.
 
 ### 3. Generate Prisma Client and Seed
 ```bash

@@ -6,6 +6,9 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 
+import { SMS_PROVIDER_TOKEN } from './sms/sms-provider.interface';
+import { DevelopmentSmsProvider } from './sms/development-sms.provider';
+
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
@@ -13,7 +16,14 @@ import { JwtStrategy } from './jwt.strategy';
     ConfigModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    {
+      provide: SMS_PROVIDER_TOKEN,
+      useClass: DevelopmentSmsProvider,
+    },
+  ],
   exports: [AuthService, JwtStrategy, PassportModule],
 })
 export class AuthModule {}

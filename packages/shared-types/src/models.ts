@@ -53,7 +53,7 @@ export interface AddressDto {
 export interface TechnicianProfileDto {
   id: string;
   userId: string;
-  nationalIdNumber?: string | null;
+  nationalIdMasked?: string | null;
   bio?: string | null;
   categories: string[];
   kycStatus: KycStatus;
@@ -214,4 +214,50 @@ export interface TransactionDto {
   referenceId: string;
   description: string;
   createdAt: Date;
+}
+
+// -----------------------------------------------------------------------------
+// AUTH & ONBOARDING DTOS
+// -----------------------------------------------------------------------------
+
+export interface UserSummaryDto {
+  id: string;
+  phone: string;
+  fullName: string;
+  role: UserRole;
+  status: UserStatus;
+  rewardPoints: number;
+  kycStatus?: KycStatus;
+}
+
+export interface AuthSessionDto {
+  success: boolean;
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  user: UserSummaryDto;
+}
+
+export interface OnboardingTokenDto {
+  success: boolean;
+  onboardingToken: string;
+  expiresInSeconds: number;
+}
+
+export interface CustomerRegistrationDto {
+  onboardingToken: string;
+  fullName: string;
+  email?: string;
+  governorate?: string;
+  city?: string;
+  street?: string;
+}
+
+export interface TechnicianRegistrationDto {
+  onboardingToken: string;
+  fullName: string;
+  nationalId: string;
+  categories: string[];
+  bio?: string;
+  serviceRadiusKm?: number;
 }
