@@ -42,7 +42,7 @@ class AuthRepository {
     return data['onboardingToken'] as String;
   }
 
-  Future<AuthSession> login({
+   Future<AuthSession> login({
     required String phone,
     required String code,
   }) async {
@@ -51,6 +51,42 @@ class AuthRepository {
       data: {
         'phone': phone,
         'code': code,
+      },
+    );
+    final session = AuthSession.fromJson(response.data as Map<String, dynamic>);
+    await _saveSession(session);
+    return session;
+  }
+
+  Future<AuthSession> loginWithPassword({
+    required String phone,
+    required String password,
+  }) async {
+    final response = await _dioClient.dio.post(
+      ApiConstants.login,
+      data: {
+        'phone': phone,
+        'password': password,
+      },
+    );
+    final session = AuthSession.fromJson(response.data as Map<String, dynamic>);
+    await _saveSession(session);
+    return session;
+  }
+
+  Future<AuthSession> register({
+    required String phone,
+    required String password,
+    required String role,
+    String? fullName,
+  }) async {
+    final response = await _dioClient.dio.post(
+      ApiConstants.register,
+      data: {
+        'phone': phone,
+        'password': password,
+        'role': role,
+        if (fullName != null && fullName.isNotEmpty) 'fullName': fullName,
       },
     );
     final session = AuthSession.fromJson(response.data as Map<String, dynamic>);

@@ -3,6 +3,7 @@ import {
   BadRequestException,
   UnauthorizedException,
   ConflictException,
+  ServiceUnavailableException,
   Logger,
   Inject,
 } from '@nestjs/common';
@@ -13,6 +14,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   SendOtpDto,
   LoginDto,
+  RegisterDto,
+  PublicRegistrationRole,
   VerifyRegistrationOtpDto,
   RegisterCustomerDto,
   RegisterTechnicianDto,
@@ -24,6 +27,8 @@ import { UserRole, UserStatus, OtpPurpose, KycStatus, OtpDeliveryStatus } from '
 import { normalizeEgyptianPhone, maskPhone } from '../../common/utils/phone.util';
 import {
   hashOtp,
+  hashPassword,
+  verifyPassword,
   verifyVerifierHash,
   encryptAesGcm,
   computeNationalIdFingerprint,
@@ -49,6 +54,9 @@ export class AuthService {
    * external SMS delivery state machine, and enumeration-safe generic response.
    */
   async sendOtp(dto: SendOtpDto, clientIp: string = '127.0.0.1') {
+    if (!this.configService.get<boolean>('otp.enabled', false)) {
+      throw new ServiceUnavailableException('خدمة رمز التحقق (OTP) غير متاحة حالياً.');
+    }
     const phone = normalizeEgyptianPhone(dto.phone);
     const purpose = dto.purpose;
     const now = new Date();
@@ -252,6 +260,9 @@ export class AuthService {
    * Verifies an OTP for registration and returns a single-use OnboardingToken.
    */
   async verifyRegistrationOtp(dto: VerifyRegistrationOtpDto, clientIp: string = '127.0.0.1') {
+    if (!this.configService.get<boolean>('otp.enabled', false)) {
+      throw new ServiceUnavailableException('خدمة رمز التحقق (OTP) غير متاحة حالياً.');
+    }
     const phone = normalizeEgyptianPhone(dto.phone);
     const now = new Date();
     const otpPepper = this.configService.get<string>('otp.pepper')!;
@@ -353,6 +364,9 @@ export class AuthService {
    * Complete Customer registration using single-use OnboardingToken.
    */
   async registerCustomer(dto: RegisterCustomerDto, clientIp: string = '127.0.0.1') {
+    if (!this.configService.get<boolean>('otp.enabled', false)) {
+      throw new ServiceUnavailableException('خدمة التسجيل عبر رمز التحقق (OTP) غير متاحة حالياً.');
+    }
     const now = new Date();
     const ipSalt = this.configService.get<string>('jwt.accessSecret')!;
     const ipHashed = hashIp(clientIp, ipSalt);
@@ -461,6 +475,9 @@ export class AuthService {
    * Complete Technician registration using single-use OnboardingToken.
    */
   async registerTechnician(dto: RegisterTechnicianDto, clientIp: string = '127.0.0.1') {
+    if (!this.configService.get<boolean>('otp.enabled', false)) {
+      throw new ServiceUnavailableException('خدمة التسجيل عبر رمز التحقق (OTP) غير متاحة حالياً.');
+    }
     const now = new Date();
     const nationalIdHmacKey = this.configService.get<string>('nationalId.hmacKey')!;
     const nationalIdEncryptionKey = this.configService.get<string>('nationalId.encryptionKey')!;
@@ -583,111 +600,163 @@ export class AuthService {
   }
 
   /**
-   * User login using phone + OTP.
-   * Generic failure on non-existent account or invalid OTP (enumeration protection).
+   * Public registration with phone + password + role (CUSTOMER or TECHNICIAN).
+   * Securely hashes password via bcrypt, enforces Egyptian phone normalization,
+   * creates user + wallet (+ technicianProfile if TECHNICIAN), and issues access & refresh tokens.
    */
-  async login(dto: LoginDto, clientIp: string = '127.0.0.1') {
+  async register(dto: RegisterDto, clientIp: string = '127.0.0.1') {
+    if (dto.role !== PublicRegistrationRole.CUSTOMER && dto.role !== PublicRegistrationRole.TECHNICIAN) {
+      throw new BadRequestException('نوع الحساب غير صالح. يُسمح فقط بـ CUSTOMER أو TECHNICIAN');
+    }
+
     const phone = normalizeEgyptianPhone(dto.phone);
-    const now = new Date();
-    const otpPepper = this.configService.get<string>('otp.pepper')!;
-    const maxAttempts = this.configService.get<number>('otp.maxAttempts', 5);
-    const codeHash = hashOtp(dto.code, otpPepper);
     const ipSalt = this.configService.get<string>('jwt.accessSecret')!;
     const ipHashed = hashIp(clientIp, ipSalt);
 
-    const result: any = await this.prisma.$transaction(async (tx) => {
-      // Atomic conditional update on LOGIN OTP
-      const updateResult = await tx.otpCode.updateMany({
-        where: {
-          phone,
-          purpose: OtpPurpose.LOGIN,
-          deliveryStatus: OtpDeliveryStatus.SENT,
-          consumedAt: null,
-          expiresAt: { gt: now },
-          attempts: { lt: maxAttempts },
-          codeHash,
-        },
+    // Uniqueness pre-check
+    const existing = await this.prisma.user.findUnique({ where: { phone } });
+    if (existing) {
+      throw new ConflictException('رقم الهاتف مسجل بالفعل. يرجى تسجيل الدخول مباشرة.');
+    }
+
+    const passwordHash = await hashPassword(dto.password);
+    const userRole = dto.role === PublicRegistrationRole.TECHNICIAN ? UserRole.TECHNICIAN : UserRole.CUSTOMER;
+    const defaultName = userRole === UserRole.TECHNICIAN ? 'فني عِدّة' : 'عميل عِدّة';
+    const fullName = dto.fullName?.trim() || defaultName;
+
+    return this.prisma.$transaction(async (tx) => {
+      // Re-verify inside transaction to prevent race conditions
+      const duplicateInTx = await tx.user.findUnique({ where: { phone } });
+      if (duplicateInTx) {
+        throw new ConflictException('رقم الهاتف مسجل بالفعل. يرجى تسجيل الدخول مباشرة.');
+      }
+
+      const user = await tx.user.create({
         data: {
-          consumedAt: now,
+          phone,
+          passwordHash,
+          fullName,
+          role: userRole,
+          status: UserStatus.ACTIVE,
+          wallet: {
+            create: {
+              availableBalanceMinorUnits: 0,
+              pendingBalanceMinorUnits: 0,
+            },
+          },
+          ...(userRole === UserRole.TECHNICIAN
+            ? {
+                technicianProfile: {
+                  create: {
+                    kycStatus: KycStatus.NOT_SUBMITTED,
+                  },
+                },
+              }
+            : {}),
+        },
+        include: { technicianProfile: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          actorRole: user.role,
+          action: 'USER_REGISTERED',
+          entityType: 'USER',
+          entityId: user.id,
+          ipAddress: ipHashed,
+          details: { maskedPhone: maskPhone(phone), role: user.role, authMethod: 'PASSWORD' },
         },
       });
 
-      // Confirm exactly one row was updated
-      if (updateResult.count !== 1) {
-        // Increment attempts only on the latest active matching OTP for this phone and purpose
-        const latestOtp = await tx.otpCode.findFirst({
-          where: {
-            phone,
-            purpose: OtpPurpose.LOGIN,
-            deliveryStatus: OtpDeliveryStatus.SENT,
-            consumedAt: null,
-            expiresAt: { gt: now },
-          },
-          orderBy: { createdAt: 'desc' },
-        });
+      const session = await this.generateSessionTokens(tx, user.id, user.phone, user.role);
 
-        if (latestOtp) {
-          await tx.otpCode.update({
-            where: { id: latestOtp.id },
-            data: { attempts: { increment: 1 } },
-          });
-        }
+      return {
+        success: true,
+        message: 'تم إنشاء الحساب بنجاح',
+        user: {
+          id: user.id,
+          phone: user.phone,
+          fullName: user.fullName,
+          role: user.role,
+          status: user.status,
+          kycStatus: user.technicianProfile?.kycStatus || 'APPROVED',
+          rewardPoints: user.rewardPoints,
+        },
+        ...session,
+      };
+    });
+  }
 
-        await tx.auditLog.create({
-          data: {
-            actorRole: UserRole.CUSTOMER,
-            action: 'LOGIN_FAILED',
-            entityType: 'USER',
-            entityId: phone,
-            ipAddress: ipHashed,
-            details: { maskedPhone: maskPhone(phone), reason: 'INVALID_OR_EXPIRED_OTP' },
-            riskScore: 25,
-          },
-        });
+  /**
+   * User login using phone + password only.
+   * Generic failure on non-existent account or invalid credentials (enumeration protection).
+   * OTP-code login payloads are strictly rejected.
+   */
+  async login(dto: LoginDto, clientIp: string = '127.0.0.1') {
+    if (!dto.password) {
+      throw new BadRequestException('كلمة المرور مطلوبة لتسجيل الدخول');
+    }
 
-        return { invalidOtp: true };
-      }
+    const phone = normalizeEgyptianPhone(dto.phone);
+    const ipSalt = this.configService.get<string>('jwt.accessSecret')!;
+    const ipHashed = hashIp(clientIp, ipSalt);
 
-      // Check user existence
-      const user = await tx.user.findUnique({
-        where: { phone },
-        include: { technicianProfile: true, storeProfile: true },
-      });
+    const user = await this.prisma.user.findUnique({
+      where: { phone },
+      include: { technicianProfile: true, storeProfile: true },
+    });
 
-      if (!user) {
-        await tx.auditLog.create({
-          data: {
-            actorRole: UserRole.CUSTOMER,
-            action: 'LOGIN_FAILED',
-            entityType: 'USER',
-            entityId: phone,
-            ipAddress: ipHashed,
-            details: { maskedPhone: maskPhone(phone), reason: 'ACCOUNT_NOT_FOUND' },
-            riskScore: 10,
-          },
-        });
-        return { accountNotFound: true };
-      }
+    if (!user || !user.passwordHash) {
+      await this.prisma.auditLog.create({
+        data: {
+          actorRole: UserRole.CUSTOMER,
+          action: 'LOGIN_FAILED',
+          entityType: 'USER',
+          entityId: phone,
+          ipAddress: ipHashed,
+          details: { maskedPhone: maskPhone(phone), reason: 'INVALID_CREDENTIALS' },
+          riskScore: 25,
+        },
+      }).catch(() => {});
+      throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    }
 
-      // Check account suspension
-      if (user.status === UserStatus.SUSPENDED) {
-        await tx.auditLog.create({
-          data: {
-            userId: user.id,
-            actorRole: user.role,
-            action: 'ACCOUNT_SUSPENDED_LOGIN_ATTEMPT',
-            entityType: 'USER',
-            entityId: user.id,
-            ipAddress: ipHashed,
-            details: { maskedPhone: maskPhone(phone) },
-            riskScore: 50,
-            isFlagged: true,
-          },
-        });
-        return { isSuspended: true };
-      }
+    const isPasswordValid = await verifyPassword(dto.password, user.passwordHash);
+    if (!isPasswordValid) {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          actorRole: user.role,
+          action: 'LOGIN_FAILED',
+          entityType: 'USER',
+          entityId: user.id,
+          ipAddress: ipHashed,
+          details: { maskedPhone: maskPhone(phone), reason: 'INVALID_CREDENTIALS' },
+          riskScore: 25,
+        },
+      }).catch(() => {});
+      throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    }
 
-      // Audit Log: Login Success
+    if (user.status === UserStatus.SUSPENDED) {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          actorRole: user.role,
+          action: 'ACCOUNT_SUSPENDED_LOGIN_ATTEMPT',
+          entityType: 'USER',
+          entityId: user.id,
+          ipAddress: ipHashed,
+          details: { maskedPhone: maskPhone(phone) },
+          riskScore: 50,
+          isFlagged: true,
+        },
+      }).catch(() => {});
+      throw new UnauthorizedException('الحساب معلق. يرجى مراجعة إدارة المنصة.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
       await tx.auditLog.create({
         data: {
           userId: user.id,
@@ -696,11 +765,10 @@ export class AuthService {
           entityType: 'USER',
           entityId: user.id,
           ipAddress: ipHashed,
-          details: { maskedPhone: maskPhone(phone), role: user.role },
+          details: { maskedPhone: maskPhone(phone), role: user.role, authMethod: 'PASSWORD' },
         },
       });
 
-      // Issue tokens
       const session = await this.generateSessionTokens(tx, user.id, user.phone, user.role);
 
       return {
@@ -717,15 +785,6 @@ export class AuthService {
         ...session,
       };
     });
-
-    if (result.invalidOtp || result.accountNotFound) {
-      throw new UnauthorizedException('بيانات الدخول أو رمز التحقق غير صحيح');
-    }
-    if (result.isSuspended) {
-      throw new UnauthorizedException('الحساب معلق. يرجى مراجعة إدارة المنصة.');
-    }
-
-    return result;
   }
 
   /**

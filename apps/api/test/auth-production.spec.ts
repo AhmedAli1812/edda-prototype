@@ -13,6 +13,8 @@ import {
   verifyVerifierHash,
 } from '../src/common/utils/crypto.util';
 import configuration from '../src/config/configuration';
+import { createSmsProvider } from '../src/modules/auth/sms/sms-provider.factory';
+import { DevelopmentSmsProvider } from '../src/modules/auth/sms/development-sms.provider';
 import { UserRole, UserStatus, OtpPurpose, KycStatus, OtpDeliveryStatus } from '@prisma/client';
 
 describe('Phase 1 Production Authentication Suite', () => {
@@ -101,14 +103,98 @@ describe('Phase 1 Production Authentication Suite', () => {
       process.env = originalEnv;
     });
 
-    it('throws fatal error in production if SMS_PROVIDER is development or missing', () => {
+    it('allows development provider in development environment', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.OTP_ENABLED = 'true';
+      process.env.SMS_PROVIDER = 'development';
+      const config = configuration();
+      expect(config.sms.provider).toBe('development');
+
+      const mockConfigService = {
+        get: jest.fn((key: string, defaultVal?: any) => {
+          if (key === 'nodeEnv' || key === 'NODE_ENV') return 'development';
+          if (key === 'otp.enabled') return true;
+          if (key === 'sms.provider') return 'development';
+          return defaultVal;
+        }),
+      } as any;
+      const provider = createSmsProvider(mockConfigService);
+      expect(provider).toBeInstanceOf(DevelopmentSmsProvider);
+    });
+
+    it('allows development provider in test environment', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.OTP_ENABLED = 'true';
+      process.env.SMS_PROVIDER = 'development';
+      const config = configuration();
+      expect(config.sms.provider).toBe('development');
+
+      const mockConfigService = {
+        get: jest.fn((key: string, defaultVal?: any) => {
+          if (key === 'nodeEnv' || key === 'NODE_ENV') return 'test';
+          if (key === 'otp.enabled') return true;
+          if (key === 'sms.provider') return 'development';
+          return defaultVal;
+        }),
+      } as any;
+      const provider = createSmsProvider(mockConfigService);
+      expect(provider).toBeInstanceOf(DevelopmentSmsProvider);
+    });
+
+    it('throws fatal error in production if SMS_PROVIDER is development', () => {
       process.env.NODE_ENV = 'production';
+      process.env.OTP_ENABLED = 'true';
       process.env.SMS_PROVIDER = 'development';
       expect(() => configuration()).toThrow(/SMS_PROVIDER cannot be "development" in production/);
+
+      const mockConfigService = {
+        get: jest.fn((key: string, defaultVal?: any) => {
+          if (key === 'nodeEnv' || key === 'NODE_ENV') return 'production';
+          if (key === 'otp.enabled') return true;
+          if (key === 'sms.provider') return 'development';
+          return defaultVal;
+        }),
+      } as any;
+      expect(() => createSmsProvider(mockConfigService)).toThrow(/SMS_PROVIDER cannot be "development" in production/);
+    });
+
+    it('throws fatal error in production if SMS_PROVIDER is missing', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.OTP_ENABLED = 'true';
+      delete process.env.SMS_PROVIDER;
+      expect(() => configuration()).toThrow(/SMS_PROVIDER cannot be "development" in production/);
+
+      const mockConfigService = {
+        get: jest.fn((key: string, defaultVal?: any) => {
+          if (key === 'nodeEnv' || key === 'NODE_ENV') return 'production';
+          if (key === 'otp.enabled') return true;
+          if (key === 'sms.provider') return undefined;
+          return defaultVal;
+        }),
+      } as any;
+      expect(() => createSmsProvider(mockConfigService)).toThrow(/SMS_PROVIDER cannot be "development" in production/);
+    });
+
+    it('throws fatal error if SMS_PROVIDER is unsupported', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.OTP_ENABLED = 'true';
+      process.env.SMS_PROVIDER = 'unsupported_gateway';
+      expect(() => configuration()).toThrow(/Unsupported SMS provider/);
+
+      const mockConfigService = {
+        get: jest.fn((key: string, defaultVal?: any) => {
+          if (key === 'nodeEnv' || key === 'NODE_ENV') return 'development';
+          if (key === 'otp.enabled') return true;
+          if (key === 'sms.provider') return 'unsupported_gateway';
+          return defaultVal;
+        }),
+      } as any;
+      expect(() => createSmsProvider(mockConfigService)).toThrow(/Unsupported SMS provider/);
     });
 
     it('throws fatal error in production if secrets are too short', () => {
       process.env.NODE_ENV = 'production';
+      process.env.OTP_ENABLED = 'true';
       process.env.SMS_PROVIDER = 'twilio';
       process.env.JWT_ACCESS_SECRET = 'short';
       expect(() => configuration()).toThrow(/JWT_ACCESS_SECRET must be set and at least 32 characters/);
@@ -179,6 +265,7 @@ describe('Phase 1 Production Authentication Suite', () => {
       };
 
       configService = new ConfigService({
+        'otp.enabled': true,
         'jwt.accessSecret': accessSecret,
         'jwt.refreshSecret': refreshSecret,
         'jwt.accessExpiration': '15m',
@@ -411,35 +498,41 @@ describe('Phase 1 Production Authentication Suite', () => {
     });
 
     describe('login lifecycle & enumeration protection', () => {
+      it('explicitly rejects OTP-code login payloads without password', async () => {
+        await expect(
+          authService.login({ phone: '01012345678', code: '482190' } as any),
+        ).rejects.toThrow(BadRequestException);
+      });
+
       it('returns generic UnauthorizedException when account does not exist (enumeration safe)', async () => {
-        mockPrisma.otpCode.updateMany.mockResolvedValue({ count: 1 });
         mockPrisma.user.findUnique.mockResolvedValue(null);
 
         await expect(
-          authService.login({ phone: '01012345678', code: '482190' }),
+          authService.login({ phone: '01012345678', password: 'Password123' }),
         ).rejects.toThrow(UnauthorizedException);
 
         expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
           expect.objectContaining({
             data: expect.objectContaining({
               action: 'LOGIN_FAILED',
-              details: expect.objectContaining({ reason: 'ACCOUNT_NOT_FOUND' }),
+              details: expect.objectContaining({ reason: 'INVALID_CREDENTIALS' }),
             }),
           }),
         );
       });
 
       it('rejects suspended accounts and logs ACCOUNT_SUSPENDED_LOGIN_ATTEMPT', async () => {
-        mockPrisma.otpCode.updateMany.mockResolvedValue({ count: 1 });
+        const hash = await require('../src/common/utils/crypto.util').hashPassword('Password123');
         mockPrisma.user.findUnique.mockResolvedValue({
           id: 'user-susp',
           phone: '+201012345678',
+          passwordHash: hash,
           status: UserStatus.SUSPENDED,
           role: UserRole.CUSTOMER,
         });
 
         await expect(
-          authService.login({ phone: '01012345678', code: '482190' }),
+          authService.login({ phone: '01012345678', password: 'Password123' }),
         ).rejects.toThrow(/الحساب معلق/);
 
         expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
