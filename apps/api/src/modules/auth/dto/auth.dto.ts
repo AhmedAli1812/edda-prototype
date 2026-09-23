@@ -44,17 +44,60 @@ export class VerifyRegistrationOtpDto {
   code: string;
 }
 
+export enum PublicRegistrationRole {
+  CUSTOMER = 'CUSTOMER',
+  TECHNICIAN = 'TECHNICIAN',
+}
+
+export class RegisterDto {
+  @ApiProperty({
+    example: '01012345678',
+    description: 'Egyptian mobile phone number (local or international format)',
+  })
+  @IsNotEmpty({ message: 'رقم الهاتف مطلوب' })
+  @IsString()
+  phone: string;
+
+  @ApiProperty({
+    example: 'StrongPassword123',
+    description: 'Account password (minimum 8 characters)',
+  })
+  @IsNotEmpty({ message: 'كلمة المرور مطلوبة' })
+  @IsString()
+  @Length(8, 128, { message: 'كلمة المرور يجب أن تتكون من 8 أحرف على الأقل' })
+  password: string;
+
+  @ApiProperty({
+    enum: PublicRegistrationRole,
+    example: PublicRegistrationRole.CUSTOMER,
+    description: 'Account role (CUSTOMER or TECHNICIAN)',
+  })
+  @IsNotEmpty({ message: 'نوع الحساب مطلوب' })
+  @IsEnum(PublicRegistrationRole, {
+    message: 'نوع الحساب غير صالح. يُسمح فقط بـ CUSTOMER أو TECHNICIAN',
+  })
+  role: PublicRegistrationRole;
+
+  @ApiPropertyOptional({ example: 'أحمد محمد', description: 'User full name' })
+  @IsOptional()
+  @IsString()
+  @Length(2, 100, { message: 'الاسم يجب أن يتراوح بين 2 و 100 حرف' })
+  fullName?: string;
+}
+
 export class LoginDto {
   @ApiProperty({ example: '01012345678', description: 'Normalized Egyptian phone number' })
   @IsNotEmpty({ message: 'رقم الهاتف مطلوب' })
   @IsString()
   phone: string;
 
-  @ApiProperty({ example: '482190', description: '6-digit OTP verification code' })
-  @IsNotEmpty({ message: 'رمز التحقق مطلوب' })
-  @Length(6, 6, { message: 'رمز التحقق يجب أن يتكون من 6 أرقام' })
-  code: string;
+  @ApiProperty({ example: 'StrongPassword123', description: 'Account password (minimum 8 characters)' })
+  @IsNotEmpty({ message: 'كلمة المرور مطلوبة' })
+  @IsString()
+  @Length(8, 128, { message: 'كلمة المرور يجب أن تتكون من 8 أحرف على الأقل' })
+  password: string;
 }
+
 
 export class RegisterCustomerDto {
   @ApiProperty({

@@ -13,6 +13,7 @@ import { AuthService } from './auth.service';
 import {
   SendOtpDto,
   LoginDto,
+  RegisterDto,
   VerifyRegistrationOtpDto,
   RegisterCustomerDto,
   RegisterTechnicianDto,
@@ -52,11 +53,23 @@ export class AuthController {
     return this.authService.verifyRegistrationOtp(dto, ip);
   }
 
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'إنشاء حساب جديد برقم الهاتف وكلمة المرور ونوع الحساب',
+    description: 'تسجيل عميل أو فني بكلمة مرور مشفرة وإصدار توكنات الجلسة مباشرة',
+  })
+  @ApiResponse({ status: 201, description: 'تم إنشاء الحساب وإصدار توكنات الجلسة بنجاح' })
+  async register(@Body() dto: RegisterDto, @Req() req: Request) {
+    const ip = (req.headers['x-forwarded-for'] as string) || req.ip || '127.0.0.1';
+    return this.authService.register(dto, ip);
+  }
+
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'تسجيل الدخول برقم الهاتف ورمز OTP',
-    description: 'التحقق من صحة الرمز واستهلاكه ذرياً وإصدار توكنات الجلسة (Access Token و Refresh Token)',
+    summary: 'تسجيل الدخول برقم الهاتف وكلمة المرور',
+    description: 'التحقق من صحة بيانات الدخول وإصدار توكنات الجلسة (Access Token و Refresh Token)',
   })
   @ApiResponse({ status: 200, description: 'تم تسجيل الدخول وإصدار توكنات الجلسة' })
   async login(@Body() dto: LoginDto, @Req() req: Request) {

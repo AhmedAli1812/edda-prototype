@@ -1,4 +1,30 @@
 import * as crypto from 'crypto';
+import * as bcrypt from 'bcrypt';
+
+const BCRYPT_SALT_ROUNDS = 12;
+
+/**
+ * Securely hashes a password using bcrypt with 12 salt rounds.
+ */
+export async function hashPassword(password: string, rounds: number = BCRYPT_SALT_ROUNDS): Promise<string> {
+  if (!password || password.length < 8) {
+    throw new Error('Password must be at least 8 characters long');
+  }
+  return bcrypt.hash(password, rounds);
+}
+
+/**
+ * Verifies a candidate password against a stored bcrypt hash safely.
+ */
+export async function verifyPassword(candidate: string, storedHash: string | null | undefined): Promise<boolean> {
+  if (!candidate || !storedHash) return false;
+  try {
+    return await bcrypt.compare(candidate, storedHash);
+  } catch {
+    return false;
+  }
+}
+
 
 /**
  * Computes an HMAC-SHA256 digest for an OTP code using the dedicated OTP_PEPPER.

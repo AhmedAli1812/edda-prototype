@@ -115,6 +115,61 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
+  Future<bool> loginWithPassword({
+    required String phone,
+    required String password,
+  }) async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      final session = await _repository.loginWithPassword(phone: phone, password: password);
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: true,
+        user: session.user,
+        role: session.user.role,
+        errorMessage: null,
+      );
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'بيانات الدخول غير صحيحة. يرجى التأكد من رقم الهاتف وكلمة المرور.',
+      );
+      return false;
+    }
+  }
+
+  Future<bool> register({
+    required String phone,
+    required String password,
+    required String role,
+    String? fullName,
+  }) async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      final session = await _repository.register(
+        phone: phone,
+        password: password,
+        role: role,
+        fullName: fullName,
+      );
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: true,
+        user: session.user,
+        role: session.user.role,
+        errorMessage: null,
+      );
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'فشل إنشاء الحساب. تأكد من أن رقم الهاتف غير مسجل مسبقاً وصحة البيانات.',
+      );
+      return false;
+    }
+  }
+
   Future<bool> loginWithOtp({
     required String phone,
     required String code,
